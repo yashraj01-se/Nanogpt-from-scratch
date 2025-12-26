@@ -70,6 +70,20 @@ class Head(nn.Module):
 
         return out
 
+class MultiHeadAttention(nn.Module):
+    """Multiple heads of causal self-attention in parallel"""
+
+    def __init__(self, num_heads, n_embd, block_size):
+        super().__init__()
+        head_size = n_embd // num_heads
+        self.heads = nn.ModuleList(
+            [Head(n_embd, head_size, block_size) for _ in range(num_heads)]
+        )
+
+    def forward(self, x):
+        out = torch.cat([h(x) for h in self.heads], dim=-1)
+        return out
+
 #The model first maps tokens into a shared embedding space where similar tokens can have similar vector representations, and then uses a linear head to convert those vectors into a probability distribution over the vocabulary.
 class GPTModel(nn.Module):
     def __init__(self):
@@ -78,7 +92,7 @@ class GPTModel(nn.Module):
         # Each token directly predicts the next token
         self.token_embedding_table = nn.Embedding(vocab_size, n_emnd)
         self.positional_embedding_table = nn.Embedding(block_size, n_emnd) #Positional embeddings inject order into the model.
-        self.sa_head = Head(n_embd=n_emnd, head_size=n_emnd, block_size=block_size) # single head of self-attention
+        self.sa_head = MultiHeadAttention(num_heads=4,n_embd=n_emnd,block_size=block_size) # 4 heads of  8 dimentional self-attention...
         self.lm_head = nn.Linear(n_emnd, vocab_size)
 
     def forward(self, idx, target=None):
