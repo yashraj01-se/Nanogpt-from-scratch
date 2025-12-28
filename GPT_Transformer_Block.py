@@ -8,7 +8,7 @@ with open("tinyshakespeare.txt", "r", encoding="utf-8") as f:
 
 characters = sorted(list(set(text)))
 vocab_size = len(characters)
-n_emnd = 32#embedding dimension #Increasing n_embd increases both training cost and inference time. 
+n_emnd = 32 #embedding dimension #Increasing n_embd increases both training cost and inference time. 
 
 char_to_idx = {ch: i for i, ch in enumerate(characters)}
 idx_to_char = {i: ch for i, ch in enumerate(characters)}
@@ -36,7 +36,7 @@ def batch_creation(split):
 
 class Head(nn.Module):
     """Single head of causal self-attention"""
-
+    """The attention mechanism allows each token to attend to all previous tokens in the sequence, enabling the model to consider context when making predictions."""
     def __init__(self, n_embd, head_size, block_size):
         super().__init__()
 
@@ -83,7 +83,33 @@ class MultiHeadAttention(nn.Module):
     def forward(self, x):
         out = torch.cat([h(x) for h in self.heads], dim=-1)
         return out
+    
+class FeedForward(nn.Module):
+    """A simple feed-forward neural network for non-linear transformation"""
+    """The feedforward network (MLP) allows each token to independently process and transform the contextual information it has gathered through self-attention."""
+    """Given everything I now know, how should I transform it?"""
+    def __init__(self, n_embd):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embd,n_embd),
+            nn.ReLU()
+        )
 
+    def forward(self, x):
+        return self.net(x)
+
+class Block(nn.Module):
+    """Transformer block: communication followed by computation"""
+    """A Transformer works by repeatedly alternating between attention (communication) and feedforward networks (computation) across multiple layers."""
+    def __init__(self, n_embd, n_head):
+        super().__init__()
+        self.sa = MultiHeadAttention(num_heads=n_head, n_embd=n_embd, block_size=block_size)
+        self.ffwd = FeedForward(n_embd)
+
+    def forward(self, x):
+        x = self.sa(x)
+        x = self.ffwd(x)
+        return x
 
 #The model first maps tokens into a shared embedding space where similar tokens can have similar vector representations, and then uses a linear head to convert those vectors into a probability distribution over the vocabulary.
 class GPTModel(nn.Module):
@@ -93,16 +119,20 @@ class GPTModel(nn.Module):
         # Each token directly predicts the next token
         self.token_embedding_table = nn.Embedding(vocab_size, n_emnd)
         self.positional_embedding_table = nn.Embedding(block_size, n_emnd) #Positional embeddings inject order into the model.
-        self.sa_head = MultiHeadAttention(num_heads=4,n_embd=n_emnd,block_size=block_size) # 4 heads of  8 dimentional self-attention...
+        self.blocks = nn.Sequential(
+            Block(n_emnd, n_head=4),
+            Block(n_emnd, n_head=4),
+            Block(n_emnd, n_head=4)
+        ) # A stack of Transformer blocks, where each block performs one full “talk → think” cycle.
         self.lm_head = nn.Linear(n_emnd, vocab_size)
 
     def forward(self, idx, target=None):
         B, T = idx.shape
         token_enb = self.token_embedding_table(idx)  # (B, T, C)
         pos_enb = self.positional_embedding_table(torch.arange(T, device=idx.device))  # (T, C)
-        x = token_enb + pos_enb  # (B, T, C)
-        x = self.sa_head(x)
-        logits = self.lm_head(x) # (B, T, vocab_size)
+        x = token_enb + pos_enb  # (B, T, C) #Positional embeddings inject order into the model.
+        x = self.blocks(x) # multiple transformer blocks
+        logits = self.lm_head(x) # (B, T, vocab_size) # language model head
 
         if target is None:
             loss = None
@@ -144,7 +174,7 @@ def estimate_loss(model, eval_iters=200):
 model = GPTModel()
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 
-max_iters = 6000
+max_iters = 10500
 eval_interval = 500
 
 for step in range(max_iters):
